@@ -2,7 +2,7 @@
 
 A powerful set of Python tools for downloading patents from Google Patents, focused on chemistry, pharmaceutical, and scientific patents without requiring any API keys.
 
-## 🔍 Features
+## Features
 
 - **Topic-Based Patent Extraction**: Search and extract multiple patents based on topics
 - **Direct Patent ID Downloads**: Download specific patents by their IDs (most reliable method)
@@ -12,7 +12,7 @@ A powerful set of Python tools for downloading patents from Google Patents, focu
 - **Comprehensive Logging**: Detailed logs and debugging information
 - **Command-Line Interface**: Easy to use in scripts and automation workflows
 
-## 📋 Examples of Topics You Can Search
+## Examples of Topics You Can Search
 
 The script has been tested successfully with various scientific and technical topics including:
 - Ammonia synthesis
@@ -23,7 +23,7 @@ The script has been tested successfully with various scientific and technical to
 - Antibiotics
 - Carbon capture
 
-## 🛠️ Requirements
+## Requirements
 
 - Python 3.6+
 - Required Python packages (install using `pip install -r requirements.txt`):
@@ -37,7 +37,7 @@ The script has been tested successfully with various scientific and technical to
   - Google Chrome browser
   - ChromeDriver (matching your Chrome version)
 
-## 📥 Installation
+## Installation
 
 1. Clone this repository:
    ```
@@ -52,7 +52,7 @@ The script has been tested successfully with various scientific and technical to
 
 3. Ensure Chrome and ChromeDriver are installed for Selenium functionality
 
-## 🚀 Usage
+## Usage
 
 ### Topic-Based Extraction and Download (Recommended)
 
@@ -110,7 +110,7 @@ This repository contains three main scripts:
    python download_patents.py --patent-id US11833153B2
    ```
 
-## 🔧 Advanced Options
+## Advanced Options
 
 ### Debugging Support
 
@@ -135,7 +135,7 @@ When using Selenium-based downloaders, you can watch the browser in action:
 python selenium_patent_downloader.py "antibiotics" --visible
 ```
 
-## 📊 Command Line Arguments for Topic Patent Extractor
+## Command Line Arguments for Topic Patent Extractor
 
 | Argument | Description | Default | Required |
 |----------|-------------|---------|----------|
@@ -145,7 +145,7 @@ python selenium_patent_downloader.py "antibiotics" --visible
 | `--visible` | Run Chrome in visible mode | False | No |
 | `--debug` | Enable debug mode | False | No |
 
-## 📋 Command Line Arguments for Individual Patent Tools
+## Command Line Arguments for Individual Patent Tools
 
 | Argument | Description | Default | Required |
 |----------|-------------|---------|----------|
@@ -157,7 +157,7 @@ python selenium_patent_downloader.py "antibiotics" --visible
 | `--patent-id` | Download a specific patent by ID | | No |
 | `--debug` | Enable debug mode | False | No |
 
-## ⚠️ Troubleshooting
+## Troubleshooting
 
 ### Common Issues and Solutions
 
@@ -191,7 +191,7 @@ python selenium_patent_downloader.py "antibiotics" --visible
 4. **Handle rate limiting**
    - If you encounter 429 errors, add delays between downloads with the `--delay` option
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 PatentsScaper/
@@ -206,14 +206,14 @@ PatentsScaper/
     └── .gitkeep                   # Placeholder to maintain directory structure
 ```
 
-## 📜 License
+## License
 
 MIT License
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Feel free to submit pull requests or open issues to improve the functionality.
 
-## 📣 Acknowledgements
+## Acknowledgements
 
 This tool was developed to help researchers download chemistry and pharmaceutical patents from Google Patents without requiring API keys. While Google Patents' structure as a single-page application presents challenges for automated extraction, this tool provides multiple approaches to maximize success rates. 
