@@ -8,6 +8,7 @@ A powerful set of Python tools for downloading patents from Google Patents, focu
 - **Direct Patent ID Downloads**: Download specific patents by their IDs (most reliable method)
 - **Multiple Download Methods**: Both simple requests-based and robust Selenium-based downloaders
 - **PDF and HTML Extraction**: Get patents in PDF format when available, with HTML fallback
+- **Descriptive Filenames**: Files saved with both patent ID and title for easy identification
 - **Duplicate Detection**: Smart handling of patent variants with the same base ID
 - **Comprehensive Logging**: Detailed logs and debugging information
 - **Command-Line Interface**: Easy to use in scripts and automation workflows
@@ -65,7 +66,7 @@ python topic_patent_extractor.py "ammonia synthesis" --max 30 --visible --debug
 This will:
 1. Search for patents related to "ammonia synthesis"
 2. Extract up to 30 patent IDs
-3. Download each patent PDF
+3. Download each patent PDF with filename format: `PATENT_ID_Title_Of_The_Patent.pdf`
 4. Provide detailed logs and save debugging information
 
 Recent successful searches include:
@@ -111,6 +112,20 @@ This repository contains three main scripts:
    ```
 
 ## Advanced Options
+
+### Improved Filenames
+
+All downloaded patents are saved using both the patent ID and title in the filename:
+
+```
+US10953088B2_Vaccine_compositions_for_porcine_epidemic_diarrhea_virus_and_porcine_deltacoronavirus.pdf
+```
+
+Benefits:
+- Instantly identify a patent's subject from the filename
+- Maintain proper organization and searchability
+- Preserve the unique patent ID for reference
+- Automatically sanitized to remove invalid characters
 
 ### Debugging Support
 
