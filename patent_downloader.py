@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote_plus, urljoin
 import json
 from datetime import datetime
+import traceback
 
 class PatentDownloader:
     def __init__(self, output_dir="patents", debug=False):
@@ -103,77 +104,137 @@ class PatentDownloader:
                 self.save_debug_info(f"Error searching for patents: {str(e)}", "search_error.txt")
             return []
     
-    def download_patent(self, patent_id, filename=None):
-        """Download a specific patent by ID."""
-        if not filename:
-            filename = f"{patent_id}.pdf"
-        
-        output_path = os.path.join(self.output_dir, filename)
-        
-        # Direct URL to the patent page
-        patent_url = f"{self.base_url}patent/{patent_id}/en"
-        print(f"Fetching patent from URL: {patent_url}")
-        
+    def download_patent(self, patent_id):
+        """Download a single patent by ID."""
         try:
-            # First get the patent page
-            response = self.session.get(patent_url, timeout=30)
+            # Generate the URL for the patent page
+            patent_url = f"{self.base_url}/patent/{patent_id}/en"
+            print(f"Fetching patent from URL: {patent_url}")
             
-            if self.debug:
-                self.save_debug_info(response.text, f"{patent_id}_page.html")
+            # Download the patent page
+            response = self.session.get(patent_url)
             
             if response.status_code != 200:
-                print(f"Error: Received status code {response.status_code} for patent page")
+                print(f"Error: Could not access patent page (status code {response.status_code})")
+                if self.debug:
+                    debug_path = os.path.join(self.output_dir, f"{patent_id}_error.html")
+                    with open(debug_path, 'w', encoding='utf-8') as f:
+                        f.write(response.text)
+                    print(f"Saved error response to: {debug_path}")
                 return False
             
-            # Parse the page
+            # Parse the page with BeautifulSoup
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Try to get patent title
-            title_elem = None
-            for selector in ['h1', '.patent-title', '[data-patent-title]']:
-                title_elem = soup.select_one(selector)
-                if title_elem:
+            # Extract the title
+            title = ""
+            try:
+                title_tag = soup.find('title')
+                if title_tag and title_tag.text:
+                    title = title_tag.text.strip()
+                    # Remove "Google Patents" and other common suffixes from title
+                    title = re.sub(r' - Google Patents$', '', title)
+                    title = re.sub(r' - Patents\.com - Google Patents$', '', title)
+                    
+                    # Remove patent ID from title (it's often included at the beginning)
+                    title = re.sub(f'^{patent_id} - ', '', title)
+                    
+                    print(f"Patent title: {title}")
+            except Exception as e:
+                print(f"Error extracting title: {str(e)}")
+            
+            # Sanitize title for filename use
+            sanitized_title = ""
+            if title:
+                # Replace invalid filename characters and limit length
+                sanitized_title = re.sub(r'[\\/*?:"<>|]', '', title)  # Remove invalid filename chars
+                sanitized_title = re.sub(r'\s+', '_', sanitized_title)  # Replace spaces with underscores
+                sanitized_title = sanitized_title[:100]  # Limit length to avoid too long filenames
+            
+            # Look for PDF links
+            pdf_url = None
+            
+            # Method 1: Look for PDF links in the page
+            pdf_links = []
+            for link in soup.find_all('a', href=True):
+                href = link.get('href')
+                if href and '.pdf' in href.lower():
+                    pdf_links.append(href)
+            
+            if pdf_links:
+                for link in pdf_links:
+                    # Make sure the URL is absolute
+                    if not link.startswith('http'):
+                        if link.startswith('/'):
+                            link = f"https://patents.google.com{link}"
+                        else:
+                            link = f"https://patents.google.com/{link}"
+                    
+                    pdf_url = link
+                    print(f"Found PDF link: {pdf_url}")
                     break
-                    
-            title = title_elem.text.strip() if title_elem else "Unknown Title"
-            print(f"Patent title: {title}")
             
-            # Try multiple PDF URLs
-            pdf_urls = [
-                f"{self.base_url}patent/pdf/{patent_id}.pdf",
-                f"{self.base_url}patent/{patent_id}.pdf",
-                f"{self.base_url}patent/{patent_id}/en/pdf",
-                f"{self.base_url}patent/{patent_id}/pdf",
-                f"https://patentimages.storage.googleapis.com/pdfs/{patent_id}.pdf"
-            ]
+            # Method 2: Try common PDF patterns
+            if not pdf_url:
+                # Try to extract from patterns in the page
+                pdf_pattern = r'(https://patentimages\.storage\.googleapis\.com/[^"\']+\.pdf)'
+                pdf_matches = re.findall(pdf_pattern, response.text)
+                
+                if pdf_matches:
+                    pdf_url = pdf_matches[0]
+                    print(f"Found PDF URL in source: {pdf_url}")
             
-            for pdf_url in pdf_urls:
+            # Method 3: Construct a PDF URL (fallback)
+            if not pdf_url:
+                # Common format for Google Patents PDF URLs
+                base_id = re.sub(r'([A-Z]\d+)[A-Z]\d*$', r'\1', patent_id)
+                pdf_url = f"https://patentimages.storage.googleapis.com/pdfs/{base_id}.pdf"
+                print(f"Using constructed PDF URL: {pdf_url}")
+            
+            # Download the PDF if found
+            if pdf_url:
                 try:
-                    print(f"Trying PDF URL: {pdf_url}")
-                    pdf_response = self.session.get(pdf_url, stream=True, timeout=10)
+                    # Create filename with patent ID and title if available
+                    if sanitized_title:
+                        pdf_filename = f"{patent_id}_{sanitized_title}.pdf"
+                    else:
+                        pdf_filename = f"{patent_id}.pdf"
                     
+                    pdf_path = os.path.join(self.output_dir, pdf_filename)
+                    
+                    pdf_response = self.session.get(pdf_url, stream=True)
+                    
+                    # Check if the response is actually a PDF
                     if pdf_response.status_code == 200 and 'application/pdf' in pdf_response.headers.get('Content-Type', ''):
-                        with open(output_path, 'wb') as f:
+                        with open(pdf_path, 'wb') as f:
                             for chunk in pdf_response.iter_content(chunk_size=8192):
                                 if chunk:
                                     f.write(chunk)
-                        print(f"Successfully downloaded PDF to: {output_path}")
+                        print(f"Successfully downloaded PDF to: {pdf_path}")
                         return True
+                    else:
+                        print(f"Failed to download PDF. Status code: {pdf_response.status_code}")
                 except Exception as e:
-                    print(f"Error with URL {pdf_url}: {str(e)}")
+                    print(f"Error downloading PDF: {str(e)}")
             
-            print("Could not download PDF. Saving HTML version instead.")
-            html_output = os.path.join(self.output_dir, f"{patent_id}.html")
-            with open(html_output, 'w', encoding='utf-8') as f:
+            # If we couldn't get the PDF, save the HTML as a fallback
+            if sanitized_title:
+                html_filename = f"{patent_id}_{sanitized_title}.html"
+            else:
+                html_filename = f"{patent_id}.html"
+                
+            html_path = os.path.join(self.output_dir, html_filename)
+            
+            with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(response.text)
-            print(f"Saved HTML to: {html_output}")
+            print(f"Saved HTML source to: {html_path}")
             
             return False
             
         except Exception as e:
-            print(f"Error downloading patent {patent_id}: {str(e)}")
+            print(f"Error processing patent {patent_id}: {str(e)}")
             if self.debug:
-                self.save_debug_info(f"Error downloading patent {patent_id}: {str(e)}", f"{patent_id}_error.txt")
+                print(traceback.format_exc())
             return False
     
     def download_patents_from_search(self, query, max_results=10, language="en"):

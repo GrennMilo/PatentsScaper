@@ -16,6 +16,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+import re
+import traceback
 
 class SeleniumPatentDownloader:
     def __init__(self, output_dir="patents", headless=True, debug=False):
@@ -356,151 +358,135 @@ class SeleniumPatentDownloader:
         
         return patents_found
     
-    def download_patent(self, patent_id, filename=None):
-        """Download a specific patent by ID."""
-        if not filename:
-            filename = f"{patent_id}.pdf"
-        
-        output_path = os.path.join(self.output_dir, filename)
-        
-        # Direct URL to the patent page
-        patent_url = f"{self.base_url}patent/{patent_id}/en"
-        print(f"Fetching patent from URL: {patent_url}")
-        
+    def download_patent(self, patent_id):
+        """Download a single patent PDF."""
         try:
+            # Generate the URL for the patent page
+            patent_url = f"{self.base_url}/patent/{patent_id}/en"
+            print(f"Patent URL: {patent_url}")
+            
             # Navigate to the patent page
             self.driver.get(patent_url)
             
-            # Wait for page to load
+            # Wait for the page to load
             try:
-                WebDriverWait(self.driver, 30).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "title"))
                 )
-                # Additional wait for dynamic content
-                time.sleep(3)
-            except TimeoutException:
-                print("Timed out waiting for patent page to load")
-                if self.debug:
-                    self.save_debug_info(f"timeout_{patent_id}", 'screenshot')
-                    self.save_debug_info(f"timeout_{patent_id}", 'html')
-                return False
-            
-            # Save debug info
-            if self.debug:
-                self.save_debug_info(f"patent_{patent_id}", 'screenshot')
-                self.save_debug_info(f"patent_{patent_id}", 'html')
-            
-            # Try to extract title
-            title = "Unknown"
-            try:
-                title_elem = self.driver.find_element(By.CSS_SELECTOR, "h1, .patent-title, [data-patent-title]")
-                title = title_elem.text.strip()
-                print(f"Patent title: {title}")
-            except NoSuchElementException:
-                print("Could not find patent title")
-            
-            # Try to find PDF download link in page
-            pdf_link = None
-            try:
-                # Try different selectors for PDF download links
-                for selector in [
-                    "a[download]", 
-                    "a[href*='.pdf']", 
-                    "a[href*='/pdf']",
-                    "button[aria-label*='Download']"
-                ]:
-                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    if elements:
-                        for element in elements:
-                            if element.tag_name == 'a':
-                                href = element.get_attribute('href')
-                                if href and ('.pdf' in href or '/pdf' in href):
-                                    pdf_link = href
-                                    print(f"Found PDF link in page: {pdf_link}")
-                                    break
-                            elif element.tag_name == 'button':
-                                # This is likely a download button, but we can't directly get the URL
-                                print("Found download button, will try direct PDF URLs instead")
-                            
-                        if pdf_link:
-                            break
             except Exception as e:
-                print(f"Error finding PDF link in page: {str(e)}")
+                print(f"Timeout waiting for patent page to load: {str(e)}")
             
-            # If found a PDF link in the page, try to download it
+            # Take a screenshot if debug is enabled
+            if self.debug:
+                try:
+                    screenshot_path = os.path.join(self.debug_dir, f"patent_{patent_id}.png")
+                    self.driver.save_screenshot(screenshot_path)
+                    print(f"Saved screenshot to: {screenshot_path}")
+                except Exception as e:
+                    print(f"Error saving screenshot: {str(e)}")
+            
+            # Extract the patent title
+            title = ""
+            try:
+                title = self.driver.title
+                # Remove "Google Patents" and other common suffixes from title
+                title = re.sub(r' - Google Patents$', '', title)
+                title = re.sub(r' - Patents\.com - Google Patents$', '', title)
+                
+                # Remove patent ID from title (it's often included at the beginning)
+                title = re.sub(f'^{patent_id} - ', '', title)
+                
+                print(f"Patent title: {title}")
+            except Exception as e:
+                print(f"Could not extract patent title: {str(e)}")
+            
+            # Sanitize title for filename use
+            sanitized_title = ""
+            if title:
+                # Replace invalid filename characters and limit length
+                sanitized_title = re.sub(r'[\\/*?:"<>|]', '', title)  # Remove invalid filename chars
+                sanitized_title = re.sub(r'\s+', '_', sanitized_title)  # Replace spaces with underscores
+                sanitized_title = sanitized_title[:100]  # Limit length to avoid too long filenames
+            
+            # Look for PDF download link
+            pdf_link = None
+            
+            # Method 1: Try to find PDF link in the page
+            try:
+                pdf_links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='.pdf']")
+                for link in pdf_links:
+                    href = link.get_attribute('href')
+                    if href and '.pdf' in href:
+                        pdf_link = href
+                        print(f"Found PDF link: {pdf_link}")
+                        break
+            except Exception as e:
+                print(f"Error finding PDF link: {str(e)}")
+            
+            # Method 2: Try to extract from page source
+            if not pdf_link:
+                try:
+                    pattern = r'href="(https://[^"]+\.pdf)"'
+                    match = re.search(pattern, self.driver.page_source)
+                    if match:
+                        pdf_link = match.group(1)
+                        print(f"Found PDF link in source: {pdf_link}")
+                except Exception as e:
+                    print(f"Error extracting PDF link from source: {str(e)}")
+            
+            # Method 3: Construct PDF link (fallback)
+            if not pdf_link:
+                # Common format for Google Patents PDF URLs
+                base_id = re.sub(r'([A-Z]\d+)[A-Z]?\d*$', r'\1', patent_id)
+                pdf_link = f"https://patentimages.storage.googleapis.com/pdfs/{base_id}.pdf"
+                print(f"Using constructed PDF link: {pdf_link}")
+            
+            # Download the PDF
             if pdf_link:
                 try:
-                    # Get cookies from Selenium to use with requests
-                    selenium_cookies = self.driver.get_cookies()
-                    for cookie in selenium_cookies:
-                        self.session.cookies.set(cookie['name'], cookie['value'])
+                    # Determine output filename
+                    if sanitized_title:
+                        pdf_filename = f"{patent_id}_{sanitized_title}.pdf"
+                    else:
+                        pdf_filename = f"{patent_id}.pdf"
+                        
+                    output_path = os.path.join(self.output_dir, pdf_filename)
                     
-                    response = self.session.get(pdf_link, stream=True, timeout=30)
-                    if response.status_code == 200 and 'application/pdf' in response.headers.get('Content-Type', ''):
+                    # Download the PDF using requests
+                    response = requests.get(pdf_link, timeout=20)
+                    
+                    if response.status_code == 200:
                         with open(output_path, 'wb') as f:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
+                            f.write(response.content)
                         print(f"Successfully downloaded PDF to: {output_path}")
                         return True
+                    else:
+                        print(f"Failed to download PDF: Status code {response.status_code}")
                 except Exception as e:
-                    print(f"Error downloading PDF from link {pdf_link}: {str(e)}")
+                    print(f"Error downloading PDF: {str(e)}")
             
-            # If no PDF link found or download failed, try direct PDF URLs
-            pdf_urls = [
-                f"{self.base_url}patent/pdf/{patent_id}.pdf",
-                f"{self.base_url}patent/{patent_id}.pdf",
-                f"{self.base_url}patent/{patent_id}/en/pdf",
-                f"{self.base_url}patent/{patent_id}/pdf",
-                f"https://patentimages.storage.googleapis.com/pdfs/{patent_id}.pdf"
-            ]
-            
-            # Get cookies from Selenium to use with requests
-            selenium_cookies = self.driver.get_cookies()
-            for cookie in selenium_cookies:
-                self.session.cookies.set(cookie['name'], cookie['value'])
-            
-            for pdf_url in pdf_urls:
-                try:
-                    print(f"Trying PDF URL: {pdf_url}")
-                    response = self.session.get(pdf_url, stream=True, timeout=10)
-                    
-                    if response.status_code == 200 and 'application/pdf' in response.headers.get('Content-Type', ''):
-                        with open(output_path, 'wb') as f:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-                        print(f"Successfully downloaded PDF to: {output_path}")
-                        return True
-                except Exception as e:
-                    print(f"Error with URL {pdf_url}: {str(e)}")
-            
-            # If all direct methods failed, try clicking any download button
+            # If PDF download failed, save the HTML source
             try:
-                download_buttons = self.driver.find_elements(By.CSS_SELECTOR, "button[aria-label*='Download'], a[download]")
-                if download_buttons:
-                    print("Found download button, attempting to click it")
-                    download_buttons[0].click()
-                    print("Clicked download button - check your browser's download folder")
-                    time.sleep(5)  # Wait for download dialog
-                    # Note: This won't save to our specified path, will go to browser's default download location
+                # Determine output HTML filename
+                if sanitized_title:
+                    html_filename = f"{patent_id}_{sanitized_title}.html"
+                else:
+                    html_filename = f"{patent_id}.html"
+                    
+                html_path = os.path.join(self.output_dir, html_filename)
+                
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(self.driver.page_source)
+                print(f"Saved HTML source to: {html_path}")
             except Exception as e:
-                print(f"Error clicking download button: {str(e)}")
-            
-            # If all PDF download methods failed, save the HTML as a fallback
-            html_output = os.path.join(self.output_dir, f"{patent_id}.html")
-            with open(html_output, 'w', encoding='utf-8') as f:
-                f.write(self.driver.page_source)
-            print(f"Could not download PDF. Saved HTML to: {html_output}")
-            
+                print(f"Error saving HTML: {str(e)}")
+                
             return False
             
         except Exception as e:
-            print(f"Error downloading patent {patent_id}: {str(e)}")
+            print(f"Error processing patent {patent_id}: {str(e)}")
             if self.debug:
-                self.save_debug_info(f"error_{patent_id}", 'screenshot')
-                self.save_debug_info(f"error_{patent_id}", 'html')
-                self.save_debug_info(f"error_details_{patent_id}", 'text')
+                print(traceback.format_exc())
             return False
     
     def download_patents_from_search(self, query, max_results=10, language="en"):

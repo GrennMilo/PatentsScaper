@@ -545,11 +545,27 @@ class PatentTopicExtractor:
                 self.save_debug_info(f"patent_{patent_id}")
             
             # Get the patent title
+            title = ""
             try:
                 title = self.driver.title
+                # Remove "Google Patents" and other common suffixes from title
+                title = re.sub(r' - Google Patents$', '', title)
+                title = re.sub(r' - Patents\.com - Google Patents$', '', title)
+                
+                # Remove patent ID from title (it's often included at the beginning)
+                title = re.sub(f'^{patent_id} - ', '', title)
+                
                 print(f"Patent title: {title}")
             except:
                 print("Could not extract patent title")
+            
+            # Sanitize title for filename use
+            sanitized_title = ""
+            if title:
+                # Replace invalid filename characters and limit length
+                sanitized_title = re.sub(r'[\\/*?:"<>|]', '', title)  # Remove invalid filename chars
+                sanitized_title = re.sub(r'\s+', '_', sanitized_title)  # Replace spaces with underscores
+                sanitized_title = sanitized_title[:100]  # Limit length to avoid too long filenames
             
             # Try to find the download link using multiple methods
             pdf_url = None
@@ -586,7 +602,13 @@ class PatentTopicExtractor:
             
             # If we found a PDF URL, download it
             if pdf_url:
-                pdf_path = os.path.join(self.output_dir, f"{patent_id}.pdf")
+                # Create filename with patent ID and title if available
+                if sanitized_title:
+                    pdf_filename = f"{patent_id}_{sanitized_title}.pdf"
+                else:
+                    pdf_filename = f"{patent_id}.pdf"
+                
+                pdf_path = os.path.join(self.output_dir, pdf_filename)
                 
                 try:
                     # Download the PDF file
@@ -601,7 +623,13 @@ class PatentTopicExtractor:
                         print(f"Failed to download PDF: Status code {response.status_code}")
                         # Save the HTML source for debugging
                         if self.debug:
-                            error_path = os.path.join(self.output_dir, f"{patent_id}.html")
+                            # Create error filename with patent ID and title if available
+                            if sanitized_title:
+                                error_filename = f"{patent_id}_{sanitized_title}.html"
+                            else:
+                                error_filename = f"{patent_id}.html"
+                            
+                            error_path = os.path.join(self.output_dir, error_filename)
                             with open(error_path, 'w', encoding='utf-8') as f:
                                 f.write(response.text)
                             print(f"Saved error response to: {error_path}")
@@ -609,7 +637,13 @@ class PatentTopicExtractor:
                     print(f"Error downloading PDF: {str(e)}")
             
             # If we couldn't download the PDF, save the HTML source
-            html_path = os.path.join(self.output_dir, f"{patent_id}.html")
+            # Create HTML filename with patent ID and title if available
+            if sanitized_title:
+                html_filename = f"{patent_id}_{sanitized_title}.html"
+            else:
+                html_filename = f"{patent_id}.html"
+                
+            html_path = os.path.join(self.output_dir, html_filename)
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(self.driver.page_source)
             print(f"Saved HTML source to: {html_path}")
